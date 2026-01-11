@@ -32,7 +32,7 @@ end
 function GM:GetAlivePlayers()
     local alive = {}
     for _, ply in ipairs(player.GetAll()) do
-        if IsValid(ply.Ragdoll) and ply.Ragdoll.Health > 0 then
+        if IsValid(ply.Ragdoll) and (ply.RagdollHealth or 0) > 0 then
             table.insert(alive, ply)
         end
     end

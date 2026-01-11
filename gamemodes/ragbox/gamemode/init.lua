@@ -28,14 +28,14 @@ function GM:PlayerConnect(name, ip)
 end
 
 function GM:PlayerDisconnected(ply)
-    -- Clean up ragdoll if player disconnects
-    if IsValid(ply.Ragdoll) then
-        ply.Ragdoll:Remove()
-    end
+    -- Clean up ragdoll system (handled by sv_player.lua)
+    self:CleanupPlayerRagdoll(ply)
 
     -- Check if we need to end round due to lack of players
     timer.Simple(0.1, function()
-        self:CheckRoundEnd()
+        if GAMEMODE and GAMEMODE.CheckRoundEnd then
+            GAMEMODE:CheckRoundEnd()
+        end
     end)
 end
 
