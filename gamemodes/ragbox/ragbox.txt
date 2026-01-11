@@ -1,0 +1,11 @@
+"ragbox"
+{
+	"base"		"base"
+	"title"		"Ragdoll Boxing"
+	"menusystem"	"1"
+	"maps"		"^gm_"
+	"workshopid"	""
+	"author"	"Claude"
+	"category"	"pvp"
+	"description"	"A third-person ragdoll boxing gamemode. Control your ragdoll and punch your opponents! 2-minute rounds."
+}
