@@ -1,0 +1,12 @@
+"frontier"
+{
+    "base"        "base"
+    "title"       "Frontier Colony"
+    "author"      "Claude"
+    "menusystem"  "1"
+
+    "settings"
+    {
+        "friendlyfire" "0"
+    }
+}
