@@ -12,46 +12,41 @@ include("cl_menus.lua")
 
 -- Initialize client
 function GM:Initialize()
-    print("==========================================")
+    print("")
+    print("========================================")
     print("  FRONTIER COLONY")
-    print("  Welcome to the colony, survivor!")
-    print("==========================================")
+    print("  Welcome to the colony!")
+    print("========================================")
+    print("")
 
     self:CreateTeams()
 
-    print("[Frontier] Client initialized!")
+    print("[Frontier] Client initialized.")
 end
 
--- Initial spawn message
+-- Show welcome message
 function GM:InitPostEntity()
-    timer.Simple(2, function()
+    timer.Simple(3, function()
         chat.AddText(
-            Color(80, 150, 255), "[Frontier] ",
-            Color(255, 255, 255), "Welcome to ",
-            Color(255, 215, 0), "Frontier Colony",
-            Color(255, 255, 255), "!"
+            Color(90, 140, 220), "[Frontier Colony] ",
+            Color(255, 255, 255), "Welcome to the colony!"
         )
         chat.AddText(
-            Color(80, 150, 255), "[Frontier] ",
-            Color(200, 200, 200), "Press ",
-            Color(255, 255, 100), "F4",
-            Color(200, 200, 200), " to select a job, ",
-            Color(255, 255, 100), "F3",
-            Color(200, 200, 200), " for the shop."
+            Color(140, 145, 160), "Press ",
+            Color(230, 180, 60), "F4 ",
+            Color(140, 145, 160), "for jobs, ",
+            Color(230, 180, 60), "F3 ",
+            Color(140, 145, 160), "for shop. Type ",
+            Color(230, 180, 60), "/help ",
+            Color(140, 145, 160), "for commands."
         )
     end)
-end
-
--- Disable some rendering for performance
-function GM:PreDrawHalos()
-    return false
 end
 
 -- Custom chat formatting
 function GM:OnPlayerChat(ply, text, teamChat, isDead)
     if not IsValid(ply) then
-        -- Server message
-        chat.AddText(Color(150, 150, 150), "[Server] ", Color(255, 255, 255), text)
+        chat.AddText(Color(140, 145, 160), "[Server] ", Color(230, 232, 240), text)
         return true
     end
 
@@ -60,80 +55,18 @@ function GM:OnPlayerChat(ply, text, teamChat, isDead)
     local teamPrefix = teamChat and "(TEAM) " or ""
 
     chat.AddText(
-        Color(150, 150, 150), prefix,
-        Color(150, 150, 150), teamPrefix,
+        Color(140, 145, 160), prefix,
+        Color(140, 145, 160), teamPrefix,
         job.color, "[" .. job.name .. "] ",
-        team.GetColor(ply:Team()), ply:Nick(),
-        Color(255, 255, 255), ": " .. text
+        Color(230, 232, 240), ply:Nick(),
+        Color(140, 145, 160), ": ",
+        Color(230, 232, 240), text
     )
 
     return true
 end
 
--- Draw player info above their heads
-function GM:PostDrawOpaqueRenderables()
-    local ply = LocalPlayer()
-    if not IsValid(ply) then return end
-
-    for _, p in ipairs(player.GetAll()) do
-        if p ~= ply and p:Alive() and p:GetPos():Distance(ply:GetPos()) < 1500 then
-            local pos = p:GetPos() + Vector(0, 0, 80)
-            local screenPos = pos:ToScreen()
-
-            if screenPos.visible then
-                local dist = ply:GetPos():Distance(p:GetPos())
-                local alpha = math.Clamp(255 - (dist / 8), 50, 255)
-                local job = GetJobByID(p:Team()) or JOBS[1]
-
-                -- Name
-                draw.SimpleText(p:Nick(), "Frontier_Small", screenPos.x, screenPos.y,
-                    Color(255, 255, 255, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-
-                -- Job
-                draw.SimpleText(job.name, "Frontier_Tiny", screenPos.x, screenPos.y + 18,
-                    Color(job.color.r, job.color.g, job.color.b, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-
-                -- Health bar
-                local barWidth = 60
-                local barHeight = 6
-                local healthPercent = p:Health() / p:GetMaxHealth()
-
-                surface.SetDrawColor(0, 0, 0, alpha)
-                surface.DrawRect(screenPos.x - barWidth/2 - 1, screenPos.y + 32, barWidth + 2, barHeight + 2)
-
-                local healthColor = healthPercent > 0.3 and Color(80, 220, 120, alpha) or Color(255, 80, 80, alpha)
-                surface.SetDrawColor(healthColor)
-                surface.DrawRect(screenPos.x - barWidth/2, screenPos.y + 33, barWidth * healthPercent, barHeight)
-            end
-        end
-    end
-end
-
--- Crosshair
-function GM:HUDShouldDraw(name)
-    -- Hide default crosshair, we draw our own in HUD
-    if name == "CHudCrosshair" then
-        return true -- Keep default crosshair for aiming
-    end
-
-    local hide = {
-        ["CHudHealth"] = true,
-        ["CHudBattery"] = true,
-        ["CHudAmmo"] = true,
-        ["CHudSecondaryAmmo"] = true,
-        ["CHudSuitPower"] = true,
-        ["CHudDamageIndicator"] = true,
-    }
-
-    return not hide[name]
-end
-
--- Create derma skin for consistent look
-hook.Add("ForceDermaSkin", "Frontier_DermaSkin", function()
-    return "Default"
-end)
-
--- Scoreboard override
+-- Scoreboard
 function GM:ScoreboardShow()
     if IsValid(FRONTIER_SCOREBOARD) then
         FRONTIER_SCOREBOARD:Show()
@@ -141,61 +74,59 @@ function GM:ScoreboardShow()
         return
     end
 
-    local scrW, scrH = ScrW(), ScrH()
-    local boardW, boardH = 600, 400
+    local sw, sh = ScrW(), ScrH()
+    local w, h = 500, 350
 
-    local board = vgui.Create("DFrame")
-    board:SetSize(boardW, boardH)
-    board:Center()
-    board:SetTitle("")
-    board:SetDraggable(false)
-    board:MakePopup()
-    board:ShowCloseButton(false)
-    FRONTIER_SCOREBOARD = board
+    local frame = vgui.Create("DFrame")
+    frame:SetSize(w, h)
+    frame:Center()
+    frame:SetTitle("")
+    frame:SetDraggable(false)
+    frame:MakePopup()
+    frame:ShowCloseButton(false)
+    FRONTIER_SCOREBOARD = frame
 
-    board.Paint = function(self, w, h)
-        draw.RoundedBox(16, 0, 0, w, h, Color(15, 15, 20, 240))
-        draw.RoundedBox(16, 0, 0, w, 50, Color(25, 25, 35, 240))
-        draw.SimpleText("COLONISTS", "Frontier_Large", w/2, 25, Color(240, 240, 245), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    frame.Paint = function(self, w, h)
+        draw.RoundedBox(8, 0, 0, w, h, Color(20, 22, 28, 245))
+        draw.RoundedBoxEx(8, 0, 0, w, 40, Color(28, 32, 40), true, true, false, false)
+        draw.SimpleText("COLONISTS", "FrontierUI_Large", w/2, 20, Color(230, 232, 240), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
-        surface.SetDrawColor(60, 60, 80)
-        surface.DrawOutlinedRect(0, 0, w, h, 2)
+        surface.SetDrawColor(50, 55, 70)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
     end
 
-    local scroll = vgui.Create("DScrollPanel", board)
-    scroll:SetPos(10, 60)
-    scroll:SetSize(boardW - 20, boardH - 70)
+    local scroll = vgui.Create("DScrollPanel", frame)
+    scroll:SetPos(10, 50)
+    scroll:SetSize(w - 20, h - 60)
 
     local sbar = scroll:GetVBar()
-    sbar:SetWide(6)
+    sbar:SetWide(4)
     sbar.Paint = function() end
     sbar.btnGrip.Paint = function(self, w, h)
-        draw.RoundedBox(3, 0, 0, w, h, Color(80, 150, 255))
+        draw.RoundedBox(2, 0, 0, w, h, Color(90, 140, 220))
     end
     sbar.btnUp.Paint = function() end
     sbar.btnDown.Paint = function() end
 
-    board.Think = function()
+    frame.Think = function()
         scroll:Clear()
 
-        local yOffset = 0
         for _, p in ipairs(player.GetAll()) do
             local row = vgui.Create("DPanel", scroll)
-            row:SetPos(0, yOffset)
-            row:SetSize(boardW - 40, 40)
+            row:SetSize(w - 30, 36)
+            row:Dock(TOP)
+            row:DockMargin(0, 0, 0, 4)
 
             local job = GetJobByID(p:Team()) or JOBS[1]
 
             row.Paint = function(self, w, h)
-                draw.RoundedBox(6, 0, 0, w, h, Color(25, 25, 35, 240))
-                draw.RoundedBox(6, 0, 0, 4, h, job.color)
+                draw.RoundedBox(6, 0, 0, w, h, Color(28, 32, 40))
+                draw.RoundedBoxEx(6, 0, 0, 3, h, job.color, true, false, true, false)
 
-                draw.SimpleText(p:Nick(), "Frontier_Medium", 20, h/2, Color(240, 240, 245), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                draw.SimpleText(job.name, "Frontier_Small", 250, h/2, job.color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-                draw.SimpleText(p:Ping() .. "ms", "Frontier_Small", w - 20, h/2, Color(150, 150, 160), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(p:Nick(), "FrontierUI", 16, h/2, Color(230, 232, 240), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(job.name, "FrontierUI_Small", 200, h/2, job.color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.SimpleText(p:Ping() .. " ms", "FrontierUI_Small", w - 16, h/2, Color(140, 145, 160), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
             end
-
-            yOffset = yOffset + 45
         end
     end
 end
@@ -206,4 +137,17 @@ function GM:ScoreboardHide()
     end
 end
 
-print("[Frontier] Client initialization complete.")
+-- Hide default crosshair (keep for aiming)
+function GM:HUDShouldDraw(name)
+    local hide = {
+        ["CHudHealth"] = true,
+        ["CHudBattery"] = true,
+        ["CHudAmmo"] = true,
+        ["CHudSecondaryAmmo"] = true,
+        ["CHudSuitPower"] = true,
+        ["CHudDamageIndicator"] = true
+    }
+    return not hide[name]
+end
+
+print("[Frontier] Client script loaded.")

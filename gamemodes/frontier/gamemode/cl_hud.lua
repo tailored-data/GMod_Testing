@@ -1,9 +1,9 @@
 --[[
     Frontier Colony - Client HUD
-    Beautiful, modern UI with all player and colony information
+    Clean, modern UI with proper spacing and tooltips
 ]]
 
--- Local player data cache
+-- Local data cache
 local LocalData = {
     credits = 0,
     alloy = 0,
@@ -12,7 +12,6 @@ local LocalData = {
     level = 1
 }
 
--- Colony data cache
 local ColonyData = {
     power = 1000,
     food = 500,
@@ -23,73 +22,84 @@ local ColonyData = {
     prosperity = 0
 }
 
--- Notification queue
 local Notifications = {}
+local HoveredElement = nil
 
--- UI Colors (modern dark theme)
-local COLORS = {
-    bg = Color(15, 15, 20, 240),
-    bgLight = Color(25, 25, 35, 240),
-    bgLighter = Color(35, 35, 50, 240),
-    accent = Color(80, 150, 255),
-    accentDark = Color(50, 100, 180),
-    text = Color(240, 240, 245),
-    textDim = Color(150, 150, 160),
-    success = Color(80, 220, 120),
-    warning = Color(255, 200, 80),
-    danger = Color(255, 80, 80),
-    credits = Color(100, 220, 100),
-    alloy = Color(180, 130, 255),
-    health = Color(220, 60, 60),
-    armor = Color(60, 140, 220),
-    power = Color(255, 220, 80),
-    food = Color(120, 200, 80),
-    shields = Color(80, 180, 255),
-    morale = Color(255, 150, 200)
+-- UI Theme
+local UI = {
+    bg = Color(20, 22, 28),
+    bgPanel = Color(28, 32, 40),
+    bgHover = Color(38, 42, 52),
+    border = Color(45, 50, 60),
+    accent = Color(90, 140, 220),
+    text = Color(230, 232, 240),
+    textDim = Color(140, 145, 160),
+    textMuted = Color(90, 95, 110),
+    success = Color(80, 190, 120),
+    warning = Color(230, 180, 60),
+    danger = Color(220, 80, 80),
+    credits = Color(110, 190, 80),
+    alloy = Color(150, 110, 210),
+    health = Color(200, 70, 70),
+    armor = Color(70, 140, 200),
+    power = Color(240, 200, 60),
+    food = Color(100, 180, 70),
+    shields = Color(80, 160, 220),
+    morale = Color(220, 130, 180)
 }
 
--- Custom fonts
-surface.CreateFont("Frontier_Title", {
-    font = "Roboto",
-    size = 36,
-    weight = 700,
-    antialias = true,
-})
+-- Padding/spacing constants
+local PAD = 12
+local PAD_SM = 8
+local PAD_XS = 4
+local RADIUS = 6
 
-surface.CreateFont("Frontier_Large", {
-    font = "Roboto",
-    size = 28,
-    weight = 600,
-    antialias = true,
-})
+-- Create fonts with fallbacks
+local function CreateFonts()
+    surface.CreateFont("FrontierUI", {
+        font = "Arial",
+        size = 16,
+        weight = 500,
+        antialias = true
+    })
 
-surface.CreateFont("Frontier_Medium", {
-    font = "Roboto",
-    size = 22,
-    weight = 500,
-    antialias = true,
-})
+    surface.CreateFont("FrontierUI_Bold", {
+        font = "Arial",
+        size = 16,
+        weight = 700,
+        antialias = true
+    })
 
-surface.CreateFont("Frontier_Small", {
-    font = "Roboto",
-    size = 18,
-    weight = 400,
-    antialias = true,
-})
+    surface.CreateFont("FrontierUI_Small", {
+        font = "Arial",
+        size = 13,
+        weight = 400,
+        antialias = true
+    })
 
-surface.CreateFont("Frontier_Tiny", {
-    font = "Roboto",
-    size = 14,
-    weight = 400,
-    antialias = true,
-})
+    surface.CreateFont("FrontierUI_Large", {
+        font = "Arial",
+        size = 22,
+        weight = 600,
+        antialias = true
+    })
 
-surface.CreateFont("Frontier_Icon", {
-    font = "Marlett",
-    size = 24,
-    weight = 400,
-    antialias = true,
-})
+    surface.CreateFont("FrontierUI_Title", {
+        font = "Arial",
+        size = 28,
+        weight = 700,
+        antialias = true
+    })
+
+    surface.CreateFont("FrontierUI_Tiny", {
+        font = "Arial",
+        size = 11,
+        weight = 400,
+        antialias = true
+    })
+end
+
+CreateFonts()
 
 -- Receive player data
 net.Receive("Frontier_PlayerData", function()
@@ -113,65 +123,43 @@ end)
 
 -- Receive notifications
 net.Receive("Frontier_Notification", function()
-    local title = net.ReadString()
-    local message = net.ReadString()
-    local color = net.ReadColor()
-    local duration = net.ReadFloat()
-
     table.insert(Notifications, {
-        title = title,
-        message = message,
-        color = color,
+        title = net.ReadString(),
+        message = net.ReadString(),
+        color = net.ReadColor(),
         startTime = CurTime(),
-        duration = duration
+        duration = net.ReadFloat()
     })
-
     surface.PlaySound("buttons/button14.wav")
 end)
 
--- Draw a rounded box with gradient
-local function DrawGradientBox(x, y, w, h, radius, col1, col2)
-    draw.RoundedBox(radius, x, y, w, h, col1)
-    -- Subtle gradient overlay
-    surface.SetDrawColor(col2.r, col2.g, col2.b, 30)
-    surface.DrawRect(x, y + h/2, w, h/2)
+-- Draw rounded box with optional border
+local function DrawPanel(x, y, w, h, bgColor, borderColor)
+    draw.RoundedBox(RADIUS, x, y, w, h, bgColor or UI.bgPanel)
+    if borderColor then
+        surface.SetDrawColor(borderColor)
+        surface.DrawOutlinedRect(x, y, w, h, 1)
+    end
 end
 
--- Draw a progress bar with glow
-local function DrawProgressBar(x, y, w, h, progress, color, bgColor)
+-- Draw progress bar
+local function DrawBar(x, y, w, h, progress, color, bgColor)
     progress = math.Clamp(progress, 0, 1)
 
     -- Background
-    draw.RoundedBox(h/2, x, y, w, h, bgColor or COLORS.bg)
+    draw.RoundedBox(h / 2, x, y, w, h, bgColor or UI.bg)
 
     -- Fill
     if progress > 0 then
-        local fillWidth = math.max(h, (w - 4) * progress)
-        draw.RoundedBox(h/2 - 1, x + 2, y + 2, fillWidth, h - 4, color)
-
-        -- Glow effect
-        surface.SetDrawColor(color.r, color.g, color.b, 50)
-        surface.DrawRect(x + 2, y + 2, fillWidth, (h - 4) / 2)
+        local fillW = math.max(h, (w - 2) * progress)
+        draw.RoundedBox(h / 2, x + 1, y + 1, fillW, h - 2, color)
     end
 end
 
--- Draw an icon with a circle background
-local function DrawIconCircle(x, y, radius, icon, bgColor, iconColor)
-    draw.NoTexture()
-    surface.SetDrawColor(bgColor)
-    draw.Circle(x, y, radius, 32)
-
-    draw.SimpleText(icon, "Frontier_Icon", x, y, iconColor, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-end
-
--- Simple circle function
-function draw.Circle(x, y, radius, segments)
-    local circle = {}
-    for i = 0, segments do
-        local angle = math.rad((i / segments) * 360)
-        table.insert(circle, {x = x + math.cos(angle) * radius, y = y + math.sin(angle) * radius})
-    end
-    surface.DrawPoly(circle)
+-- Check if mouse is over an area
+local function IsMouseOver(x, y, w, h)
+    local mx, my = gui.MousePos()
+    return mx >= x and mx <= x + w and my >= y and my <= y + h
 end
 
 -- Main HUD Paint
@@ -179,206 +167,246 @@ function GM:HUDPaint()
     local ply = LocalPlayer()
     if not IsValid(ply) then return end
 
-    local scrW, scrH = ScrW(), ScrH()
+    local sw, sh = ScrW(), ScrH()
 
-    -- Draw all HUD elements
-    self:DrawPlayerStatus(ply, scrW, scrH)
-    self:DrawCurrencyPanel(scrW, scrH)
-    self:DrawColonyPanel(scrW, scrH)
-    self:DrawNotifications(scrW, scrH)
+    self:DrawPlayerPanel(ply, sw, sh)
+    self:DrawCurrencyPanel(sw, sh)
+    self:DrawColonyPanel(sw, sh)
+    self:DrawNotifications(sw, sh)
+    self:DrawTooltip(sw, sh)
 
-    -- Attack warning overlay
     if ColonyData.isUnderAttack then
-        self:DrawAttackWarning(scrW, scrH)
+        self:DrawAttackWarning(sw, sh)
     end
 end
 
--- Player status (health, armor, job)
-function GM:DrawPlayerStatus(ply, scrW, scrH)
-    local panelW, panelH = 320, 100
-    local panelX, panelY = 20, scrH - panelH - 20
+-- Player status panel (bottom left)
+function GM:DrawPlayerPanel(ply, sw, sh)
+    local w, h = 280, 130
+    local x, y = PAD, sh - h - PAD
 
-    -- Background panel
-    draw.RoundedBox(12, panelX, panelY, panelW, panelH, COLORS.bg)
-    draw.RoundedBox(12, panelX, panelY, panelW, 3, COLORS.accent)
+    DrawPanel(x, y, w, h, UI.bgPanel)
 
-    -- Job name
+    -- Job header
     local job = GetJobByID(LocalData.job) or JOBS[1]
-    draw.SimpleText(job.name, "Frontier_Medium", panelX + 15, panelY + 12, job.color)
+    local headerH = 32
+
+    draw.RoundedBoxEx(RADIUS, x, y, w, headerH, UI.bg, true, true, false, false)
+    draw.SimpleText(job.name, "FrontierUI_Bold", x + PAD, y + headerH / 2, job.color, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
     -- Level badge
-    local levelX = panelX + panelW - 50
-    draw.RoundedBox(6, levelX, panelY + 8, 40, 24, COLORS.accent)
-    draw.SimpleText("Lv." .. LocalData.level, "Frontier_Small", levelX + 20, panelY + 20, COLORS.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    local lvlW = 50
+    draw.RoundedBox(4, x + w - lvlW - PAD_SM, y + 6, lvlW, 20, UI.accent)
+    draw.SimpleText("LVL " .. LocalData.level, "FrontierUI_Small", x + w - lvlW / 2 - PAD_SM, y + 16, UI.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
-    -- Health bar
-    local barY = panelY + 42
-    draw.SimpleText("HP", "Frontier_Tiny", panelX + 15, barY + 6, COLORS.textDim)
-    DrawProgressBar(panelX + 45, barY, 200, 16, ply:Health() / ply:GetMaxHealth(), COLORS.health, COLORS.bgLight)
-    draw.SimpleText(ply:Health(), "Frontier_Tiny", panelX + 250, barY + 6, COLORS.text)
+    -- Health section
+    local barY = y + headerH + PAD
+    local labelW = 24
+    local barW = w - PAD * 2 - labelW - PAD_SM - 35
+    local barH = 14
 
-    -- Armor bar
-    barY = panelY + 64
-    draw.SimpleText("AP", "Frontier_Tiny", panelX + 15, barY + 6, COLORS.textDim)
-    DrawProgressBar(panelX + 45, barY, 200, 16, ply:Armor() / 100, COLORS.armor, COLORS.bgLight)
-    draw.SimpleText(ply:Armor(), "Frontier_Tiny", panelX + 250, barY + 6, COLORS.text)
+    -- Health
+    draw.SimpleText("HP", "FrontierUI_Small", x + PAD, barY + barH / 2, UI.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    DrawBar(x + PAD + labelW + PAD_SM, barY, barW, barH, ply:Health() / ply:GetMaxHealth(), UI.health)
+    draw.SimpleText(ply:Health(), "FrontierUI_Small", x + w - PAD, barY + barH / 2, UI.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 
-    -- XP bar (small, under panel)
-    local xpProgress = XPProgress(LocalData.xp)
-    DrawProgressBar(panelX, panelY + panelH + 5, panelW, 8, xpProgress, COLORS.accent, COLORS.bgLight)
+    -- Armor
+    barY = barY + barH + PAD_SM
+    draw.SimpleText("AP", "FrontierUI_Small", x + PAD, barY + barH / 2, UI.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    DrawBar(x + PAD + labelW + PAD_SM, barY, barW, barH, ply:Armor() / 100, UI.armor)
+    draw.SimpleText(ply:Armor(), "FrontierUI_Small", x + w - PAD, barY + barH / 2, UI.text, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+
+    -- XP bar
+    barY = barY + barH + PAD
+    draw.SimpleText("XP", "FrontierUI_Small", x + PAD, barY + barH / 2, UI.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    DrawBar(x + PAD + labelW + PAD_SM, barY, barW + 35, barH, XPProgress(LocalData.xp), UI.accent)
+
+    -- Keybind hints
+    local hintY = y + h - 20
+    draw.SimpleText("F3 Shop  |  F4 Jobs", "FrontierUI_Tiny", x + w / 2, hintY, UI.textMuted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end
 
 -- Currency panel (top right)
-function GM:DrawCurrencyPanel(scrW, scrH)
-    local panelW, panelH = 200, 70
-    local panelX = scrW - panelW - 20
-    local panelY = 20
+function GM:DrawCurrencyPanel(sw, sh)
+    local w, h = 160, 70
+    local x, y = sw - w - PAD, PAD
 
-    -- Background
-    draw.RoundedBox(12, panelX, panelY, panelW, panelH, COLORS.bg)
+    DrawPanel(x, y, w, h, UI.bgPanel)
 
     -- Credits
-    draw.SimpleText(CURRENCY_SYMBOLS[CURRENCY_CREDITS], "Frontier_Large", panelX + 20, panelY + 18, COLORS.credits)
-    draw.SimpleText(string.Comma(LocalData.credits), "Frontier_Medium", panelX + 50, panelY + 16, COLORS.text)
+    local iconSize = 8
+    local rowY = y + PAD + 2
+
+    surface.SetDrawColor(UI.credits)
+    surface.DrawRect(x + PAD, rowY + 4, iconSize, iconSize)
+    draw.SimpleText(FormatMoney(LocalData.credits), "FrontierUI_Bold", x + PAD + iconSize + PAD_SM, rowY + 6, UI.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
     -- Alloy
-    draw.SimpleText(CURRENCY_SYMBOLS[CURRENCY_ALLOY], "Frontier_Large", panelX + 20, panelY + 44, COLORS.alloy)
-    draw.SimpleText(string.Comma(LocalData.alloy), "Frontier_Medium", panelX + 50, panelY + 42, COLORS.text)
+    rowY = rowY + 26
+    surface.SetDrawColor(UI.alloy)
+    surface.DrawRect(x + PAD, rowY + 4, iconSize, iconSize)
+    draw.SimpleText(string.Comma(LocalData.alloy) .. " Alloy", "FrontierUI_Bold", x + PAD + iconSize + PAD_SM, rowY + 6, UI.alloy, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+    -- Tooltip area
+    if IsMouseOver(x, y, w, h) then
+        HoveredElement = {
+            x = x,
+            y = y + h + 4,
+            title = "Your Resources",
+            lines = {
+                {color = UI.credits, text = "Credits: Earned from paychecks. Spend at shops."},
+                {color = UI.alloy, text = "Alloy: Mine ore nodes. Use for colony upgrades."}
+            }
+        }
+    end
 end
 
 -- Colony status panel (top center)
-function GM:DrawColonyPanel(scrW, scrH)
-    local panelW, panelH = 400, 90
-    local panelX = (scrW - panelW) / 2
-    local panelY = 20
+function GM:DrawColonyPanel(sw, sh)
+    local w, h = 360, 95
+    local x, y = (sw - w) / 2, PAD
 
-    -- Background
-    draw.RoundedBox(12, panelX, panelY, panelW, panelH, COLORS.bg)
+    DrawPanel(x, y, w, h, UI.bgPanel)
 
     -- Title
-    draw.SimpleText("COLONY STATUS", "Frontier_Small", panelX + panelW/2, panelY + 12, COLORS.textDim, TEXT_ALIGN_CENTER)
+    draw.SimpleText("COLONY STATUS", "FrontierUI_Small", x + w / 2, y + 12, UI.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
-    -- Prosperity score
-    draw.SimpleText("Prosperity: " .. string.Comma(ColonyData.prosperity), "Frontier_Tiny", panelX + panelW/2, panelY + panelH - 12, COLORS.accent, TEXT_ALIGN_CENTER)
+    -- Resource bars in a grid
+    local barW = 70
+    local barH = 10
+    local spacing = 12
+    local startX = x + PAD
+    local barY = y + 30
 
-    -- Resource bars
-    local barW = 85
-    local barH = 12
-    local barY = panelY + 35
-    local startX = panelX + 15
+    local resources = {
+        {name = "Power", value = ColonyData.power, max = COLONY_MAX_POWER, color = UI.power, tip = "Powers all colony systems. Engineers can refuel generators."},
+        {name = "Food", value = ColonyData.food, max = COLONY_MAX_FOOD, color = UI.food, tip = "Feeds colonists. Farmers can harvest crops."},
+        {name = "Shields", value = ColonyData.shields, max = COLONY_MAX_SHIELDS, color = UI.shields, tip = "Protects during attacks. Buy capacitors to restore."},
+        {name = "Morale", value = ColonyData.morale, max = COLONY_MAX_MORALE, color = UI.morale, tip = "Affects paycheck bonuses. Keep resources high."}
+    }
 
-    -- Power
-    draw.SimpleText("PWR", "Frontier_Tiny", startX, barY - 12, COLORS.power)
-    DrawProgressBar(startX, barY, barW, barH, ColonyData.power / COLONY_MAX_POWER, COLORS.power, COLORS.bgLight)
+    for i, res in ipairs(resources) do
+        local bx = startX + (i - 1) * (barW + spacing)
 
-    -- Food
-    startX = startX + barW + 15
-    draw.SimpleText("FOOD", "Frontier_Tiny", startX, barY - 12, COLORS.food)
-    DrawProgressBar(startX, barY, barW, barH, ColonyData.food / COLONY_MAX_FOOD, COLORS.food, COLORS.bgLight)
+        -- Label
+        draw.SimpleText(res.name, "FrontierUI_Tiny", bx + barW / 2, barY, UI.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
 
-    -- Shields
-    startX = startX + barW + 15
-    draw.SimpleText("SHLD", "Frontier_Tiny", startX, barY - 12, COLORS.shields)
-    DrawProgressBar(startX, barY, barW, barH, ColonyData.shields / COLONY_MAX_SHIELDS, COLORS.shields, COLORS.bgLight)
+        -- Bar
+        DrawBar(bx, barY + 4, barW, barH, res.value / res.max, res.color)
 
-    -- Morale
-    startX = startX + barW + 15
-    draw.SimpleText("MRL", "Frontier_Tiny", startX, barY - 12, COLORS.morale)
-    DrawProgressBar(startX, barY, barW, barH, ColonyData.morale / 100, COLORS.morale, COLORS.bgLight)
+        -- Value
+        local displayVal = res.name == "Shields" or res.name == "Morale"
+            and math.floor(res.value) .. "%"
+            or math.floor(res.value)
+        draw.SimpleText(displayVal, "FrontierUI_Tiny", bx + barW / 2, barY + barH + 8, UI.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 
-    -- Morale percentage affects display
-    local moraleColor = COLORS.success
-    if ColonyData.morale < 50 then
-        moraleColor = COLORS.warning
-    elseif ColonyData.morale < 25 then
-        moraleColor = COLORS.danger
+        -- Hover detection for tooltip
+        if IsMouseOver(bx, barY - 10, barW, barH + 20) then
+            HoveredElement = {
+                x = bx,
+                y = barY + barH + 24,
+                title = res.name,
+                lines = {{color = UI.textDim, text = res.tip}}
+            }
+        end
     end
 
-    -- Numeric values below
-    barY = barY + barH + 4
-    startX = panelX + 15
-    draw.SimpleText(math.floor(ColonyData.power), "Frontier_Tiny", startX + barW/2, barY, COLORS.textDim, TEXT_ALIGN_CENTER)
-    startX = startX + barW + 15
-    draw.SimpleText(math.floor(ColonyData.food), "Frontier_Tiny", startX + barW/2, barY, COLORS.textDim, TEXT_ALIGN_CENTER)
-    startX = startX + barW + 15
-    draw.SimpleText(math.floor(ColonyData.shields) .. "%", "Frontier_Tiny", startX + barW/2, barY, COLORS.textDim, TEXT_ALIGN_CENTER)
-    startX = startX + barW + 15
-    draw.SimpleText(math.floor(ColonyData.morale) .. "%", "Frontier_Tiny", startX + barW/2, barY, moraleColor, TEXT_ALIGN_CENTER)
+    -- Prosperity score
+    draw.SimpleText("Prosperity: " .. string.Comma(ColonyData.prosperity), "FrontierUI_Small", x + w / 2, y + h - 14, UI.accent, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+    -- Panel tooltip
+    if IsMouseOver(x, y, w, 22) then
+        HoveredElement = {
+            x = x + w / 2 - 100,
+            y = y + h + 4,
+            title = "Colony Resources",
+            lines = {
+                {color = UI.textDim, text = "Keep Power and Food above zero to survive!"},
+                {color = UI.textDim, text = "Work together to maintain these resources."}
+            }
+        }
+    end
+end
+
+-- Draw tooltip
+function GM:DrawTooltip(sw, sh)
+    if not HoveredElement then return end
+
+    local tip = HoveredElement
+    local w = 220
+    local lineH = 16
+    local h = 28 + #tip.lines * lineH
+
+    local x = math.Clamp(tip.x, PAD, sw - w - PAD)
+    local y = math.Clamp(tip.y, PAD, sh - h - PAD)
+
+    DrawPanel(x, y, w, h, Color(35, 38, 48), UI.border)
+
+    draw.SimpleText(tip.title, "FrontierUI_Bold", x + PAD_SM, y + PAD_SM, UI.text)
+
+    for i, line in ipairs(tip.lines) do
+        draw.SimpleText(line.text, "FrontierUI_Tiny", x + PAD_SM, y + 22 + (i - 1) * lineH, line.color or UI.textDim)
+    end
+
+    HoveredElement = nil
 end
 
 -- Notifications (right side)
-function GM:DrawNotifications(scrW, scrH)
-    local notifW, notifH = 300, 70
-    local startX = scrW - notifW - 20
-    local startY = 110
+function GM:DrawNotifications(sw, sh)
+    local notifW, notifH = 260, 60
+    local startX = sw - notifW - PAD
+    local startY = 100
 
-    -- Remove expired notifications
+    -- Remove expired
     for i = #Notifications, 1, -1 do
         if CurTime() - Notifications[i].startTime > Notifications[i].duration then
             table.remove(Notifications, i)
         end
     end
 
-    -- Draw notifications
+    -- Draw
     for i, notif in ipairs(Notifications) do
         local elapsed = CurTime() - notif.startTime
         local alpha = 1
 
-        -- Fade in/out
-        if elapsed < 0.3 then
-            alpha = elapsed / 0.3
-        elseif elapsed > notif.duration - 0.5 then
-            alpha = (notif.duration - elapsed) / 0.5
+        if elapsed < 0.2 then
+            alpha = elapsed / 0.2
+        elseif elapsed > notif.duration - 0.3 then
+            alpha = (notif.duration - elapsed) / 0.3
         end
 
-        local y = startY + (i - 1) * (notifH + 10)
+        local y = startY + (i - 1) * (notifH + PAD_SM)
+        local slideX = startX + (1 - alpha) * 30
 
-        -- Slide in animation
-        local slideX = startX
-        if elapsed < 0.3 then
-            slideX = startX + (1 - alpha) * 50
-        end
-
-        -- Background
-        local bgColor = Color(COLORS.bg.r, COLORS.bg.g, COLORS.bg.b, COLORS.bg.a * alpha)
-        draw.RoundedBox(10, slideX, y, notifW, notifH, bgColor)
+        local bgCol = Color(UI.bgPanel.r, UI.bgPanel.g, UI.bgPanel.b, 240 * alpha)
+        DrawPanel(slideX, y, notifW, notifH, bgCol)
 
         -- Accent bar
-        local accentColor = Color(notif.color.r, notif.color.g, notif.color.b, 255 * alpha)
-        draw.RoundedBox(10, slideX, y, 4, notifH, accentColor)
+        surface.SetDrawColor(notif.color.r, notif.color.g, notif.color.b, 255 * alpha)
+        surface.DrawRect(slideX, y, 3, notifH)
 
-        -- Title
-        local titleColor = Color(notif.color.r, notif.color.g, notif.color.b, 255 * alpha)
-        draw.SimpleText(notif.title, "Frontier_Medium", slideX + 15, y + 12, titleColor)
-
-        -- Message
-        local msgColor = Color(COLORS.text.r, COLORS.text.g, COLORS.text.b, 255 * alpha)
-        draw.SimpleText(notif.message, "Frontier_Small", slideX + 15, y + 40, msgColor)
+        -- Text
+        draw.SimpleText(notif.title, "FrontierUI_Bold", slideX + PAD, y + PAD, Color(notif.color.r, notif.color.g, notif.color.b, 255 * alpha))
+        draw.SimpleText(notif.message, "FrontierUI_Small", slideX + PAD, y + PAD + 20, Color(UI.text.r, UI.text.g, UI.text.b, 255 * alpha))
     end
 end
 
--- Attack warning overlay
-function GM:DrawAttackWarning(scrW, scrH)
+-- Attack warning
+function GM:DrawAttackWarning(sw, sh)
     local pulse = math.abs(math.sin(CurTime() * 3))
 
-    -- Red vignette
-    surface.SetDrawColor(255, 0, 0, 30 + pulse * 30)
-    surface.DrawRect(0, 0, scrW, 100)
-    surface.DrawRect(0, scrH - 100, scrW, 100)
-    surface.DrawRect(0, 0, 100, scrH)
-    surface.DrawRect(scrW - 100, 0, 100, scrH)
+    -- Red border
+    surface.SetDrawColor(220, 40, 40, 40 + pulse * 40)
+    surface.DrawRect(0, 0, sw, 60)
+    surface.DrawRect(0, sh - 60, sw, 60)
 
     -- Warning text
-    local warningY = 130
-    local alpha = 180 + pulse * 75
-
-    draw.SimpleText("!! ALIEN ATTACK !!", "Frontier_Title", scrW/2, warningY,
-        Color(255, 50, 50, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    draw.SimpleText("Wave " .. ColonyData.attackWave .. " - Defend the Colony!", "Frontier_Medium", scrW/2, warningY + 40,
-        Color(255, 200, 200, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    local textY = 130
+    draw.SimpleText("ALIEN ATTACK", "FrontierUI_Title", sw / 2, textY, Color(220, 60, 60, 200 + pulse * 55), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    draw.SimpleText("Wave " .. ColonyData.attackWave .. " - Defend the colony!", "FrontierUI", sw / 2, textY + 32, Color(255, 200, 200, 200 + pulse * 55), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end
 
--- Hide default HUD elements
+-- Hide default HUD
 function GM:HUDShouldDraw(name)
     local hide = {
         ["CHudHealth"] = true,
@@ -386,23 +414,41 @@ function GM:HUDShouldDraw(name)
         ["CHudAmmo"] = true,
         ["CHudSecondaryAmmo"] = true,
         ["CHudSuitPower"] = true,
-        ["CHudDamageIndicator"] = true,
+        ["CHudDamageIndicator"] = true
     }
-
     return not hide[name]
 end
 
--- Controls hint (bottom right)
-hook.Add("HUDPaint", "Frontier_ControlsHint", function()
-    local scrW, scrH = ScrW(), ScrH()
+-- Player name tags
+function GM:PostDrawOpaqueRenderables()
+    local ply = LocalPlayer()
+    if not IsValid(ply) then return end
 
-    local hints = {
-        "F3 - Shop",
-        "F4 - Jobs"
-    }
+    for _, p in ipairs(player.GetAll()) do
+        if p ~= ply and p:Alive() then
+            local dist = ply:GetPos():Distance(p:GetPos())
+            if dist < 800 then
+                local pos = p:GetPos() + Vector(0, 0, 80)
+                local screenPos = pos:ToScreen()
 
-    local y = scrH - 60
-    for i, hint in ipairs(hints) do
-        draw.SimpleText(hint, "Frontier_Tiny", scrW - 20, y + (i-1) * 18, COLORS.textDim, TEXT_ALIGN_RIGHT)
+                if screenPos.visible then
+                    local alpha = math.Clamp(255 - dist / 4, 80, 255)
+                    local job = GetJobByID(p:Team()) or JOBS[1]
+
+                    draw.SimpleText(p:Nick(), "FrontierUI", screenPos.x, screenPos.y, Color(255, 255, 255, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                    draw.SimpleText(job.name, "FrontierUI_Tiny", screenPos.x, screenPos.y + 16, Color(job.color.r, job.color.g, job.color.b, alpha), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+                    -- Health bar
+                    local bw, bh = 50, 4
+                    local hpPct = p:Health() / p:GetMaxHealth()
+
+                    surface.SetDrawColor(0, 0, 0, alpha)
+                    surface.DrawRect(screenPos.x - bw / 2 - 1, screenPos.y + 28, bw + 2, bh + 2)
+
+                    surface.SetDrawColor(hpPct > 0.3 and UI.success.r or UI.danger.r, hpPct > 0.3 and UI.success.g or UI.danger.g, hpPct > 0.3 and UI.success.b or UI.danger.b, alpha)
+                    surface.DrawRect(screenPos.x - bw / 2, screenPos.y + 29, bw * hpPct, bh)
+                end
+            end
+        end
     end
-end)
+end

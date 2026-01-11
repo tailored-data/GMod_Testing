@@ -16,19 +16,32 @@ AddCSLuaFile("cl_menus.lua")
 include("sv_player.lua")
 include("sv_economy.lua")
 include("sv_colony.lua")
+include("sv_resources.lua")
+include("sv_housing.lua")
+include("sv_vehicles.lua")
 
 -- Initialize gamemode
 function GM:Initialize()
-    print("==========================================")
+    print("")
+    print("========================================")
     print("  FRONTIER COLONY")
-    print("  A Cooperative Space Colony Survival RPG")
-    print("==========================================")
+    print("  Cooperative Space Colony Survival RPG")
+    print("========================================")
+    print("")
 
     self:CreateTeams()
     self:InitializeColony()
     self:InitializeEconomy()
+    self:InitializeHousing()
+    self:InitializeVehicles()
 
-    print("[Frontier] Gamemode initialized successfully!")
+    -- Delayed resource spawn (after map loads)
+    timer.Simple(2, function()
+        self:InitializeResources()
+    end)
+
+    print("[Frontier] All systems initialized!")
+    print("")
 end
 
 -- Main think loop
@@ -37,42 +50,50 @@ function GM:Think()
     self:EconomyThink()
 end
 
--- Set game description
+-- Game description
 function GM:GetGameDescription()
     return "Frontier Colony"
 end
 
--- Player say hook for commands
+-- Player commands
 function GM:PlayerSay(ply, text, teamChat)
-    local lower = string.lower(text)
+    local cmd = string.lower(text)
 
-    if lower == "/help" then
-        ply:ChatPrint("[Frontier] Commands:")
-        ply:ChatPrint("  /job - Open job selection menu")
+    if cmd == "/help" then
+        ply:ChatPrint("")
+        ply:ChatPrint("[Frontier Colony] Commands:")
+        ply:ChatPrint("  /job - Open job selection")
         ply:ChatPrint("  /shop - Open the shop")
-        ply:ChatPrint("  Press F3 for shop, F4 for jobs")
+        ply:ChatPrint("  F3 - Quick shop access")
+        ply:ChatPrint("  F4 - Quick job access")
+        ply:ChatPrint("")
+        ply:ChatPrint("How to play:")
+        ply:ChatPrint("  - Choose a job to earn Credits")
+        ply:ChatPrint("  - Mine ore nodes for Alloy")
+        ply:ChatPrint("  - Keep colony Power and Food above zero")
+        ply:ChatPrint("  - Defend against alien attacks")
+        ply:ChatPrint("")
         return ""
     end
 
     return text
 end
 
--- Player connect message
+-- Player connect
 function GM:PlayerConnect(name, ip)
-    print("[Frontier] " .. name .. " is connecting to the colony...")
+    print("[Frontier] " .. name .. " connecting...")
 end
 
 -- Player authenticated
 function GM:PlayerAuthed(ply, steamid, uniqueid)
-    print("[Frontier] " .. ply:Nick() .. " authenticated. SteamID: " .. steamid)
+    print("[Frontier] " .. ply:Nick() .. " authenticated")
 end
 
--- Player death handling
+-- Player death
 function GM:PlayerDeath(victim, inflictor, attacker)
     if IsValid(victim) then
-        victim:ChatPrint("[Frontier] You have been downed! Respawning in 5 seconds...")
+        victim:ChatPrint("[Frontier] You have been downed. Respawning in 5 seconds...")
 
-        -- Respawn after delay
         timer.Simple(5, function()
             if IsValid(victim) then
                 victim:Spawn()
@@ -81,12 +102,12 @@ function GM:PlayerDeath(victim, inflictor, attacker)
     end
 end
 
--- Prevent suicide spam
+-- Prevent suicide
 function GM:CanPlayerSuicide(ply)
     return false
 end
 
--- Scale damage based on job
+-- Scale damage based on job abilities
 function GM:ScalePlayerDamage(ply, hitgroup, dmginfo)
     local data = self:GetPlayerData(ply)
     if not data then return end
@@ -94,13 +115,13 @@ function GM:ScalePlayerDamage(ply, hitgroup, dmginfo)
     local job = GetJobByID(data.job)
     if not job then return end
 
-    -- Security takes less damage (armor_boost ability)
+    -- Security takes less damage
     if table.HasValue(job.abilities or {}, "armor_boost") then
         dmginfo:ScaleDamage(0.8)
     end
 end
 
--- Scale NPC/entity damage based on job
+-- Entity damage scaling
 function GM:EntityTakeDamage(target, dmginfo)
     local attacker = dmginfo:GetAttacker()
 
@@ -109,7 +130,6 @@ function GM:EntityTakeDamage(target, dmginfo)
         if data then
             local job = GetJobByID(data.job)
             if job and table.HasValue(job.abilities or {}, "combat_bonus") then
-                -- Security deals more damage
                 dmginfo:ScaleDamage(1.25)
             end
         end
@@ -118,25 +138,26 @@ end
 
 -- Spawn point selection
 function GM:PlayerSelectSpawn(ply)
-    local spawns = ents.FindByClass("info_player_start")
-    if #spawns == 0 then
-        spawns = ents.FindByClass("info_player_deathmatch")
-    end
-    if #spawns == 0 then
-        spawns = ents.FindByClass("info_player_terrorist")
-    end
-    if #spawns == 0 then
-        spawns = ents.FindByClass("info_player_counterterrorist")
-    end
+    local classes = {
+        "info_player_start",
+        "info_player_deathmatch",
+        "info_player_terrorist",
+        "info_player_counterterrorist",
+        "info_player_combine",
+        "info_player_rebel"
+    }
 
-    if #spawns > 0 then
-        return spawns[math.random(#spawns)]
+    for _, class in ipairs(classes) do
+        local spawns = ents.FindByClass(class)
+        if #spawns > 0 then
+            return spawns[math.random(#spawns)]
+        end
     end
 
     return nil
 end
 
--- Disable fall damage (optional, for more casual gameplay)
+-- No fall damage
 function GM:GetFallDamage(ply, speed)
     return 0
 end
@@ -146,4 +167,33 @@ function GM:PlayerSwitchFlashlight(ply, enabled)
     return true
 end
 
-print("[Frontier] Server initialization complete.")
+-- Spawn NPCs on map load
+hook.Add("InitPostEntity", "Frontier_SpawnNPCs", function()
+    timer.Simple(3, function()
+        -- Find a good spot to spawn dealer NPCs
+        local spawns = ents.FindByClass("info_player_start")
+        if #spawns > 0 then
+            local basePos = spawns[1]:GetPos()
+
+            -- Spawn Housing Dealer
+            local housing = ents.Create("frontier_npc_housing")
+            if IsValid(housing) then
+                housing:SetPos(basePos + Vector(100, 0, 0))
+                housing:SetAngles(Angle(0, 180, 0))
+                housing:Spawn()
+                print("[Frontier] Spawned Property Dealer")
+            end
+
+            -- Spawn Vehicle Dealer
+            local vehicles = ents.Create("frontier_npc_vehicles")
+            if IsValid(vehicles) then
+                vehicles:SetPos(basePos + Vector(-100, 0, 0))
+                vehicles:SetAngles(Angle(0, 0, 0))
+                vehicles:Spawn()
+                print("[Frontier] Spawned Vehicle Dealer")
+            end
+        end
+    end)
+end)
+
+print("[Frontier] Server script loaded.")

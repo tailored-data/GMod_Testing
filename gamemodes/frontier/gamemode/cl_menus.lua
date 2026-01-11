@@ -1,359 +1,425 @@
 --[[
     Frontier Colony - Client Menus
-    Beautiful VGUI menus for jobs, shop, and colony upgrades
+    Clean VGUI menus with 3D model previews
 ]]
 
--- Local player data reference (from cl_hud.lua)
-local function GetLocalData()
-    return {
-        credits = LocalPlayer():GetNWInt("credits", 0),
-        alloy = LocalPlayer():GetNWInt("alloy", 0),
-        job = LocalPlayer():Team() or 1
-    }
-end
-
--- UI Colors (matching HUD)
-local COLORS = {
-    bg = Color(15, 15, 20, 250),
-    bgLight = Color(25, 25, 35, 250),
-    bgLighter = Color(40, 40, 55, 250),
-    bgHover = Color(50, 50, 70, 250),
-    accent = Color(80, 150, 255),
-    accentDark = Color(50, 100, 180),
-    text = Color(240, 240, 245),
-    textDim = Color(150, 150, 160),
-    success = Color(80, 220, 120),
-    warning = Color(255, 200, 80),
-    danger = Color(255, 80, 80),
-    credits = Color(100, 220, 100),
-    alloy = Color(180, 130, 255),
-    border = Color(60, 60, 80)
-}
-
--- Cached player data for menus
+-- Cached player data
 local CachedCredits = 0
 local CachedAlloy = 0
 local CachedJob = 1
+
+-- UI Theme (matching HUD)
+local UI = {
+    bg = Color(20, 22, 28),
+    bgPanel = Color(28, 32, 40),
+    bgCard = Color(35, 40, 50),
+    bgHover = Color(45, 52, 65),
+    border = Color(50, 55, 70),
+    accent = Color(90, 140, 220),
+    accentHover = Color(110, 160, 240),
+    text = Color(230, 232, 240),
+    textDim = Color(140, 145, 160),
+    textMuted = Color(90, 95, 110),
+    success = Color(80, 190, 120),
+    successHover = Color(100, 210, 140),
+    warning = Color(230, 180, 60),
+    danger = Color(220, 80, 80),
+    credits = Color(110, 190, 80),
+    alloy = Color(150, 110, 210)
+}
+
+local PAD = 16
+local PAD_SM = 10
+local RADIUS = 8
 
 -- Update cache from network
 net.Receive("Frontier_PlayerData", function()
     CachedCredits = net.ReadInt(32)
     CachedAlloy = net.ReadInt(32)
     CachedJob = net.ReadInt(8)
-    net.ReadInt(32) -- xp
-    net.ReadInt(8) -- level
+    net.ReadInt(32)
+    net.ReadInt(8)
 end)
 
--- Create a styled button
-local function CreateStyledButton(parent, text, x, y, w, h, onClick)
+-- Create styled frame
+local function CreateFrame(title, w, h)
+    local frame = vgui.Create("DFrame")
+    frame:SetSize(w, h)
+    frame:Center()
+    frame:SetTitle("")
+    frame:SetDraggable(true)
+    frame:MakePopup()
+    frame:ShowCloseButton(false)
+
+    frame.Paint = function(self, w, h)
+        draw.RoundedBox(RADIUS, 0, 0, w, h, UI.bg)
+        draw.RoundedBoxEx(RADIUS, 0, 0, w, 48, UI.bgPanel, true, true, false, false)
+        draw.SimpleText(title, "FrontierUI_Large", PAD, 24, UI.text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+        surface.SetDrawColor(UI.border)
+        surface.DrawOutlinedRect(0, 0, w, h, 1)
+        surface.DrawLine(0, 48, w, 48)
+    end
+
+    -- Close button
+    local closeBtn = vgui.Create("DButton", frame)
+    closeBtn:SetPos(w - 40, 8)
+    closeBtn:SetSize(32, 32)
+    closeBtn:SetText("")
+    closeBtn.Paint = function(self, w, h)
+        local col = self:IsHovered() and UI.danger or UI.textDim
+        draw.SimpleText("X", "FrontierUI_Bold", w/2, h/2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    closeBtn.DoClick = function() frame:Close() end
+
+    return frame
+end
+
+-- Create styled button
+local function CreateButton(parent, text, x, y, w, h, color, onClick)
     local btn = vgui.Create("DButton", parent)
     btn:SetPos(x, y)
     btn:SetSize(w, h)
     btn:SetText("")
 
-    btn.Label = text
-    btn.BGColor = COLORS.bgLighter
-    btn.HoverColor = COLORS.bgHover
-    btn.AccentColor = COLORS.accent
+    btn.BaseColor = color or UI.accent
+    btn.HoverColor = color and Color(color.r + 20, color.g + 20, color.b + 20) or UI.accentHover
 
     btn.Paint = function(self, w, h)
-        local bgCol = self:IsHovered() and self.HoverColor or self.BGColor
-        draw.RoundedBox(8, 0, 0, w, h, bgCol)
-
-        if self:IsHovered() then
-            draw.RoundedBox(8, 0, h - 3, w, 3, self.AccentColor)
-        end
-
-        draw.SimpleText(self.Label, "Frontier_Medium", w/2, h/2, COLORS.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        local col = self:IsHovered() and self.HoverColor or self.BaseColor
+        draw.RoundedBox(6, 0, 0, w, h, col)
+        draw.SimpleText(text, "FrontierUI_Bold", w/2, h/2, UI.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
 
     btn.DoClick = onClick
     return btn
 end
 
--- Create the Jobs Menu
-local function OpenJobsMenu()
-    if IsValid(FRONTIER_JOBMENU) then
-        FRONTIER_JOBMENU:Remove()
-    end
-
-    local scrW, scrH = ScrW(), ScrH()
-    local menuW, menuH = 700, 500
-
-    local frame = vgui.Create("DFrame")
-    frame:SetSize(menuW, menuH)
-    frame:Center()
-    frame:SetTitle("")
-    frame:SetDraggable(true)
-    frame:MakePopup()
-    frame:ShowCloseButton(false)
-    FRONTIER_JOBMENU = frame
-
-    frame.Paint = function(self, w, h)
-        -- Background
-        draw.RoundedBox(16, 0, 0, w, h, COLORS.bg)
-        draw.RoundedBox(16, 0, 0, w, 50, COLORS.bgLight)
-
-        -- Title
-        draw.SimpleText("SELECT YOUR JOB", "Frontier_Large", w/2, 25, COLORS.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-
-        -- Border
-        surface.SetDrawColor(COLORS.border)
-        surface.DrawOutlinedRect(0, 0, w, h, 2)
-    end
-
-    -- Close button
-    local closeBtn = vgui.Create("DButton", frame)
-    closeBtn:SetPos(menuW - 45, 10)
-    closeBtn:SetSize(30, 30)
-    closeBtn:SetText("")
-    closeBtn.Paint = function(self, w, h)
-        local col = self:IsHovered() and COLORS.danger or COLORS.textDim
-        draw.SimpleText("X", "Frontier_Medium", w/2, h/2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    closeBtn.DoClick = function() frame:Close() end
-
-    -- Job list scroll panel
-    local scroll = vgui.Create("DScrollPanel", frame)
-    scroll:SetPos(20, 60)
-    scroll:SetSize(menuW - 40, menuH - 80)
+-- Create scroll panel with styled scrollbar
+local function CreateScrollPanel(parent, x, y, w, h)
+    local scroll = vgui.Create("DScrollPanel", parent)
+    scroll:SetPos(x, y)
+    scroll:SetSize(w, h)
 
     local sbar = scroll:GetVBar()
-    sbar:SetWide(8)
-    sbar.Paint = function() end
+    sbar:SetWide(6)
+    sbar.Paint = function(self, w, h)
+        draw.RoundedBox(3, 0, 0, w, h, UI.bg)
+    end
     sbar.btnGrip.Paint = function(self, w, h)
-        draw.RoundedBox(4, 0, 0, w, h, COLORS.accent)
+        draw.RoundedBox(3, 0, 0, w, h, UI.accent)
     end
     sbar.btnUp.Paint = function() end
     sbar.btnDown.Paint = function() end
 
-    -- Create job cards
-    local yOffset = 0
+    return scroll
+end
+
+--[[ JOBS MENU ]]--
+
+local function OpenJobsMenu()
+    if IsValid(FRONTIER_JOBS) then FRONTIER_JOBS:Remove() end
+
+    local frame = CreateFrame("SELECT JOB", 700, 520)
+    FRONTIER_JOBS = frame
+
+    -- Currency display
+    local currY = 12
+    draw.SimpleText = draw.SimpleText -- Ensure available
+    frame.PaintOver = function(self, w, h)
+        draw.SimpleText(FormatMoney(CachedCredits), "FrontierUI", w - 140, currY + 12, UI.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(string.Comma(CachedAlloy) .. " A", "FrontierUI", w - 140, currY + 30, UI.alloy, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    local scroll = CreateScrollPanel(frame, PAD, 60, 700 - PAD * 2, 520 - 70)
+
+    local cardH = 100
+    local cardW = 700 - PAD * 2 - 20
+
     for id, job in pairs(JOBS) do
         local card = vgui.Create("DPanel", scroll)
-        card:SetPos(0, yOffset)
-        card:SetSize(menuW - 60, 90)
+        card:SetSize(cardW, cardH)
+        card:Dock(TOP)
+        card:DockMargin(0, 0, 0, PAD_SM)
 
         local isCurrentJob = (CachedJob == id)
 
         card.Paint = function(self, w, h)
-            local bgCol = isCurrentJob and COLORS.bgLighter or COLORS.bgLight
-            draw.RoundedBox(10, 0, 0, w, h, bgCol)
+            local bg = self:IsHovered() and UI.bgHover or UI.bgCard
+            draw.RoundedBox(RADIUS, 0, 0, w, h, bg)
 
-            -- Job color bar
-            draw.RoundedBox(10, 0, 0, 6, h, job.color)
+            -- Color accent bar
+            draw.RoundedBoxEx(RADIUS, 0, 0, 4, h, job.color, true, false, true, false)
 
             -- Job name
-            draw.SimpleText(job.name, "Frontier_Large", 20, 15, job.color)
+            draw.SimpleText(job.name, "FrontierUI_Large", 120, 20, job.color)
 
             -- Description
-            draw.SimpleText(job.description, "Frontier_Small", 20, 45, COLORS.textDim)
+            draw.SimpleText(job.description, "FrontierUI_Small", 120, 45, UI.textDim)
 
-            -- Salary
-            draw.SimpleText("Salary: " .. FormatCurrency(job.salary, CURRENCY_CREDITS), "Frontier_Small", 20, 68, COLORS.credits)
+            -- Stats
+            draw.SimpleText("Salary: " .. FormatMoney(job.salary), "FrontierUI_Small", 120, 70, UI.credits)
 
-            -- Max players
+            if job.alloyBonus > 0 then
+                draw.SimpleText("+" .. job.alloyBonus .. "% Alloy", "FrontierUI_Small", 250, 70, UI.alloy)
+            end
+
             if job.maxPlayers > 0 then
-                draw.SimpleText("Slots: " .. job.maxPlayers, "Frontier_Small", 200, 68, COLORS.textDim)
+                draw.SimpleText("Slots: " .. job.maxPlayers, "FrontierUI_Small", 380, 70, UI.textMuted)
             end
 
-            -- Current job indicator
+            -- Current job badge
             if isCurrentJob then
-                draw.SimpleText("CURRENT", "Frontier_Small", w - 100, h/2, COLORS.success, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+                draw.RoundedBox(4, w - 100, 38, 80, 24, UI.success)
+                draw.SimpleText("CURRENT", "FrontierUI_Small", w - 60, 50, UI.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             end
+        end
+
+        -- 3D Model Preview
+        local modelPanel = vgui.Create("DModelPanel", card)
+        modelPanel:SetPos(20, 10)
+        modelPanel:SetSize(80, 80)
+        modelPanel:SetModel(job.model)
+        modelPanel:SetFOV(45)
+
+        local mn, mx = modelPanel.Entity:GetRenderBounds()
+        local size = 0
+        size = math.max(size, math.abs(mn.x) + math.abs(mx.x))
+        size = math.max(size, math.abs(mn.y) + math.abs(mx.y))
+        size = math.max(size, math.abs(mn.z) + math.abs(mx.z))
+
+        modelPanel:SetCamPos(Vector(size, size, size * 0.5))
+        modelPanel:SetLookAt((mn + mx) / 2)
+
+        modelPanel.LayoutEntity = function(ent)
+            ent:SetAngles(Angle(0, RealTime() * 30, 0))
         end
 
         -- Select button
         if not isCurrentJob then
-            local selectBtn = vgui.Create("DButton", card)
-            selectBtn:SetPos(menuW - 180, 25)
-            selectBtn:SetSize(100, 40)
-            selectBtn:SetText("")
-
-            selectBtn.Paint = function(self, w, h)
-                local col = self:IsHovered() and COLORS.accent or COLORS.accentDark
-                draw.RoundedBox(8, 0, 0, w, h, col)
-                draw.SimpleText("SELECT", "Frontier_Small", w/2, h/2, COLORS.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            end
-
-            selectBtn.DoClick = function()
+            local selectBtn = CreateButton(card, "SELECT", cardW - 110, 30, 90, 40, nil, function()
                 net.Start("Frontier_ChangeJob")
                 net.WriteInt(id, 8)
                 net.SendToServer()
-                frame:Close()
-            end
+                timer.Simple(0.1, function()
+                    if IsValid(frame) then frame:Close() end
+                    OpenJobsMenu()
+                end)
+            end)
         end
-
-        yOffset = yOffset + 100
     end
 end
 
--- Create the Shop Menu
+--[[ SHOP MENU ]]--
+
 local function OpenShopMenu()
-    if IsValid(FRONTIER_SHOPMENU) then
-        FRONTIER_SHOPMENU:Remove()
+    if IsValid(FRONTIER_SHOP) then FRONTIER_SHOP:Remove() end
+
+    local frame = CreateFrame("COLONY SHOP", 650, 500)
+    FRONTIER_SHOP = frame
+
+    -- Currency display in header
+    frame.PaintOver = function(self, w, h)
+        draw.SimpleText(FormatMoney(CachedCredits), "FrontierUI", w - 180, 24, UI.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+        draw.SimpleText(string.Comma(CachedAlloy) .. " Alloy", "FrontierUI", w - 80, 24, UI.alloy, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
     end
-
-    local scrW, scrH = ScrW(), ScrH()
-    local menuW, menuH = 800, 550
-
-    local frame = vgui.Create("DFrame")
-    frame:SetSize(menuW, menuH)
-    frame:Center()
-    frame:SetTitle("")
-    frame:SetDraggable(true)
-    frame:MakePopup()
-    frame:ShowCloseButton(false)
-    FRONTIER_SHOPMENU = frame
-
-    frame.Paint = function(self, w, h)
-        -- Background
-        draw.RoundedBox(16, 0, 0, w, h, COLORS.bg)
-        draw.RoundedBox(16, 0, 0, w, 50, COLORS.bgLight)
-
-        -- Title
-        draw.SimpleText("COLONY SHOP", "Frontier_Large", w/2, 25, COLORS.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-
-        -- Currency display
-        draw.SimpleText(CURRENCY_SYMBOLS[CURRENCY_CREDITS] .. string.Comma(CachedCredits), "Frontier_Medium", 20, 25, COLORS.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-        draw.SimpleText(CURRENCY_SYMBOLS[CURRENCY_ALLOY] .. string.Comma(CachedAlloy), "Frontier_Medium", 150, 25, COLORS.alloy, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-
-        -- Border
-        surface.SetDrawColor(COLORS.border)
-        surface.DrawOutlinedRect(0, 0, w, h, 2)
-    end
-
-    -- Close button
-    local closeBtn = vgui.Create("DButton", frame)
-    closeBtn:SetPos(menuW - 45, 10)
-    closeBtn:SetSize(30, 30)
-    closeBtn:SetText("")
-    closeBtn.Paint = function(self, w, h)
-        local col = self:IsHovered() and COLORS.danger or COLORS.textDim
-        draw.SimpleText("X", "Frontier_Medium", w/2, h/2, col, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-    end
-    closeBtn.DoClick = function() frame:Close() end
 
     -- Tab buttons
-    local tabY = 60
     local activeTab = "personal"
+    local tabY = 60
 
-    local tabPersonal = CreateStyledButton(frame, "Personal Items", 20, tabY, 150, 35, function()
-        activeTab = "personal"
-    end)
+    local tabPersonal = CreateButton(frame, "Personal Items", PAD, tabY, 140, 32, nil, function() end)
+    local tabColony = CreateButton(frame, "Colony Upgrades", PAD + 150, tabY, 140, 32, UI.alloy, function() end)
 
-    local tabColony = CreateStyledButton(frame, "Colony Upgrades", 180, tabY, 150, 35, function()
-        activeTab = "colony"
-    end)
-
-    -- Content area
     local contentPanel = vgui.Create("DPanel", frame)
-    contentPanel:SetPos(20, 110)
-    contentPanel:SetSize(menuW - 40, menuH - 130)
+    contentPanel:SetPos(PAD, tabY + 45)
+    contentPanel:SetSize(650 - PAD * 2, 500 - tabY - 60)
     contentPanel.Paint = function() end
 
-    -- Function to populate items
     local function PopulateItems(items, isColony)
         contentPanel:Clear()
 
-        local scroll = vgui.Create("DScrollPanel", contentPanel)
-        scroll:Dock(FILL)
+        local scroll = CreateScrollPanel(contentPanel, 0, 0, contentPanel:GetWide(), contentPanel:GetTall())
 
-        local sbar = scroll:GetVBar()
-        sbar:SetWide(8)
-        sbar.Paint = function() end
-        sbar.btnGrip.Paint = function(self, w, h)
-            draw.RoundedBox(4, 0, 0, w, h, COLORS.accent)
-        end
-        sbar.btnUp.Paint = function() end
-        sbar.btnDown.Paint = function() end
-
-        local yOffset = 0
         for _, item in ipairs(items) do
             local card = vgui.Create("DPanel", scroll)
-            card:SetPos(0, yOffset)
-            card:SetSize(menuW - 80, 80)
+            card:SetSize(contentPanel:GetWide() - 20, 70)
+            card:Dock(TOP)
+            card:DockMargin(0, 0, 0, PAD_SM)
 
             local canAfford = (item.currency == CURRENCY_CREDITS and CachedCredits >= item.price) or
                               (item.currency == CURRENCY_ALLOY and CachedAlloy >= item.price)
 
             card.Paint = function(self, w, h)
-                draw.RoundedBox(10, 0, 0, w, h, COLORS.bgLight)
+                local bg = self:IsHovered() and UI.bgHover or UI.bgCard
+                draw.RoundedBox(RADIUS, 0, 0, w, h, bg)
 
-                -- Item name
-                draw.SimpleText(item.name, "Frontier_Medium", 20, 15, COLORS.text)
+                draw.SimpleText(item.name, "FrontierUI_Bold", PAD, 18, UI.text)
+                draw.SimpleText(item.description, "FrontierUI_Small", PAD, 42, UI.textDim)
 
-                -- Description
-                draw.SimpleText(item.description, "Frontier_Small", 20, 42, COLORS.textDim)
-
-                -- Price
-                local priceColor = canAfford and CURRENCY_COLORS[item.currency] or COLORS.danger
-                draw.SimpleText(FormatCurrency(item.price, item.currency), "Frontier_Medium", 20, 62, priceColor)
+                local priceCol = canAfford and CURRENCY_COLORS[item.currency] or UI.danger
+                draw.SimpleText(FormatCurrency(item.price, item.currency), "FrontierUI_Bold", PAD, 60, priceCol)
             end
 
-            -- Buy button
-            local buyBtn = vgui.Create("DButton", card)
-            buyBtn:SetPos(menuW - 200, 20)
-            buyBtn:SetSize(100, 40)
-            buyBtn:SetText("")
-
-            buyBtn.Paint = function(self, w, h)
-                local col
-                if not canAfford then
-                    col = COLORS.bgLighter
-                elseif self:IsHovered() then
-                    col = COLORS.success
-                else
-                    col = Color(60, 160, 80)
-                end
-
-                draw.RoundedBox(8, 0, 0, w, h, col)
-
-                local textCol = canAfford and COLORS.text or COLORS.textDim
-                draw.SimpleText("BUY", "Frontier_Small", w/2, h/2, textCol, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            end
-
-            buyBtn.DoClick = function()
-                if canAfford then
-                    if isColony then
-                        net.Start("Frontier_BuyUpgrade")
-                    else
-                        net.Start("Frontier_BuyItem")
-                    end
-                    net.WriteString(item.id)
-                    net.SendToServer()
-
-                    -- Refresh after short delay
-                    timer.Simple(0.2, function()
-                        if IsValid(frame) then
-                            PopulateItems(items, isColony)
+            local buyBtn = CreateButton(card, "BUY", card:GetWide() - 100, 15, 80, 40,
+                canAfford and UI.success or Color(60, 60, 70),
+                function()
+                    if canAfford then
+                        if isColony then
+                            net.Start("Frontier_BuyUpgrade")
+                        else
+                            net.Start("Frontier_BuyItem")
                         end
-                    end)
-                end
-            end
+                        net.WriteString(item.id)
+                        net.SendToServer()
+                        timer.Simple(0.2, function()
+                            if IsValid(frame) then
+                                PopulateItems(items, isColony)
+                            end
+                        end)
+                    end
+                end)
 
-            yOffset = yOffset + 90
+            if not canAfford then
+                buyBtn.BaseColor = Color(50, 50, 60)
+                buyBtn.HoverColor = Color(50, 50, 60)
+            end
         end
     end
 
-    -- Tab click handlers
     tabPersonal.DoClick = function()
+        activeTab = "personal"
+        tabPersonal.BaseColor = UI.accent
+        tabColony.BaseColor = Color(50, 55, 70)
         PopulateItems(SHOP_ITEMS, false)
-        tabPersonal.AccentColor = COLORS.accent
-        tabColony.AccentColor = COLORS.bgLighter
     end
 
     tabColony.DoClick = function()
+        activeTab = "colony"
+        tabColony.BaseColor = UI.alloy
+        tabPersonal.BaseColor = Color(50, 55, 70)
         PopulateItems(COLONY_UPGRADES, true)
-        tabColony.AccentColor = COLORS.accent
-        tabPersonal.AccentColor = COLORS.bgLighter
     end
 
-    -- Default to personal items
     tabPersonal.DoClick()
 end
 
--- Keybinds
+--[[ HOUSING MENU ]]--
+
+local function OpenHousingMenu()
+    if IsValid(FRONTIER_HOUSING) then FRONTIER_HOUSING:Remove() end
+
+    local frame = CreateFrame("PROPERTY DEALER", 600, 450)
+    FRONTIER_HOUSING = frame
+
+    frame.PaintOver = function(self, w, h)
+        draw.SimpleText(FormatMoney(CachedCredits), "FrontierUI", w - 140, 24, UI.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    local scroll = CreateScrollPanel(frame, PAD, 60, 600 - PAD * 2, 450 - 70)
+
+    -- Info text
+    local infoPanel = vgui.Create("DPanel", scroll)
+    infoPanel:SetSize(560, 50)
+    infoPanel:Dock(TOP)
+    infoPanel:DockMargin(0, 0, 0, PAD)
+    infoPanel.Paint = function(self, w, h)
+        draw.RoundedBox(RADIUS, 0, 0, w, h, UI.bgCard)
+        draw.SimpleText("Properties are doors on the map. Own a property to lock its doors.", "FrontierUI_Small", PAD, h/2, UI.textDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    -- Would populate with actual property data from server
+    -- For now, show placeholder
+    local placeholder = vgui.Create("DPanel", scroll)
+    placeholder:SetSize(560, 80)
+    placeholder:Dock(TOP)
+    placeholder.Paint = function(self, w, h)
+        draw.RoundedBox(RADIUS, 0, 0, w, h, UI.bgCard)
+        draw.SimpleText("Interact with Property Dealer NPCs", "FrontierUI", w/2, h/2 - 10, UI.textDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("on the map to browse available properties.", "FrontierUI_Small", w/2, h/2 + 12, UI.textMuted, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+end
+
+--[[ VEHICLE MENU ]]--
+
+local function OpenVehicleMenu()
+    if IsValid(FRONTIER_VEHICLES) then FRONTIER_VEHICLES:Remove() end
+
+    local frame = CreateFrame("VEHICLE DEALER", 700, 480)
+    FRONTIER_VEHICLES = frame
+
+    frame.PaintOver = function(self, w, h)
+        draw.SimpleText(FormatMoney(CachedCredits), "FrontierUI", w - 140, 24, UI.credits, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+    end
+
+    local scroll = CreateScrollPanel(frame, PAD, 60, 700 - PAD * 2, 480 - 70)
+
+    for _, vehicle in ipairs(VEHICLES) do
+        local card = vgui.Create("DPanel", scroll)
+        card:SetSize(660, 110)
+        card:Dock(TOP)
+        card:DockMargin(0, 0, 0, PAD_SM)
+
+        local canAfford = CachedCredits >= vehicle.price
+
+        card.Paint = function(self, w, h)
+            local bg = self:IsHovered() and UI.bgHover or UI.bgCard
+            draw.RoundedBox(RADIUS, 0, 0, w, h, bg)
+
+            -- Vehicle info
+            draw.SimpleText(vehicle.name, "FrontierUI_Large", 130, 25, UI.text)
+            draw.SimpleText(vehicle.description, "FrontierUI_Small", 130, 55, UI.textDim)
+
+            local priceCol = canAfford and UI.credits or UI.danger
+            draw.SimpleText(FormatMoney(vehicle.price), "FrontierUI_Bold", 130, 85, priceCol)
+        end
+
+        -- 3D Model Preview
+        local modelPanel = vgui.Create("DModelPanel", card)
+        modelPanel:SetPos(15, 15)
+        modelPanel:SetSize(100, 80)
+        modelPanel:SetModel(vehicle.model)
+        modelPanel:SetFOV(60)
+
+        local mn, mx = modelPanel.Entity:GetRenderBounds()
+        local size = 0
+        size = math.max(size, math.abs(mn.x) + math.abs(mx.x))
+        size = math.max(size, math.abs(mn.y) + math.abs(mx.y))
+        size = math.max(size, math.abs(mn.z) + math.abs(mx.z))
+
+        modelPanel:SetCamPos(Vector(size * 1.5, size * 1.5, size * 0.5))
+        modelPanel:SetLookAt((mn + mx) / 2)
+
+        modelPanel.LayoutEntity = function(ent)
+            ent:SetAngles(Angle(0, RealTime() * 20, 0))
+        end
+
+        -- Buy button
+        local buyBtn = CreateButton(card, "BUY", card:GetWide() - 110, 35, 90, 40,
+            canAfford and UI.success or Color(60, 60, 70),
+            function()
+                if canAfford then
+                    net.Start("Frontier_BuyVehicle")
+                    net.WriteString(vehicle.id)
+                    net.SendToServer()
+                    timer.Simple(0.2, function()
+                        if IsValid(frame) then
+                            frame:Close()
+                            OpenVehicleMenu()
+                        end
+                    end)
+                end
+            end)
+
+        if not canAfford then
+            buyBtn.BaseColor = Color(50, 50, 60)
+            buyBtn.HoverColor = Color(50, 50, 60)
+        end
+    end
+end
+
+--[[ KEY BINDINGS ]]--
+
 hook.Add("PlayerButtonDown", "Frontier_MenuKeys", function(ply, key)
     if key == KEY_F3 then
         OpenShopMenu()
@@ -370,9 +436,15 @@ net.Receive("Frontier_OpenMenu", function()
         OpenJobsMenu()
     elseif menuType == "shop" then
         OpenShopMenu()
+    elseif menuType == "housing" then
+        OpenHousingMenu()
+    elseif menuType == "vehicles" then
+        OpenVehicleMenu()
     end
 end)
 
 -- Console commands
 concommand.Add("frontier_jobs", OpenJobsMenu)
 concommand.Add("frontier_shop", OpenShopMenu)
+concommand.Add("frontier_housing", OpenHousingMenu)
+concommand.Add("frontier_vehicles", OpenVehicleMenu)
