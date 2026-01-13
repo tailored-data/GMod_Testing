@@ -1,9 +1,9 @@
 "frontier"
 {
-    "base"        "base"
-    "title"       "Frontier Colony"
-    "author"      "Claude"
-    "menusystem"  "1"
+    "base"          "darkrp"
+    "title"         "Frontier Colony"
+    "author"        "Claude"
+    "menusystem"    "1"
 
     "settings"
     {
